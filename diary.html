@@ -1,0 +1,559 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+<title>그림일기</title>
+<style>
+  :root{
+    --paper:#FDFBF6;
+    --ink:#33322E;
+    --muted:#9B978D;
+    --line:#EAE6DC;
+    --coral:#E8836F;
+    --sage:#8CA98B;
+    --sky:#8FB5D6;
+    --butter:#EBC26B;
+    --lavender:#A996C9;
+    --shadow:0 8px 24px rgba(80,70,60,.10);
+    --font: -apple-system, BlinkMacSystemFont, 'Apple SD Gothic Neo', 'Pretendard', 'Malgun Gothic', 'Segoe UI', system-ui, sans-serif;
+  }
+  *{box-sizing:border-box; -webkit-tap-highlight-color:transparent;}
+  html,body{margin:0; padding:0; height:100%;}
+  body{
+    font-family:var(--font); color:var(--ink); background:#EDE7F0;
+    display:flex; justify-content:center; -webkit-font-smoothing:antialiased;
+  }
+  #app{width:100%; max-width:460px; min-height:100vh; display:flex; flex-direction:column;
+    position:relative; padding-bottom:80px; background-size:cover; background-position:center;
+    background:linear-gradient(180deg,#FBF7F0 0%,#EDE7F0 55%,#F5E3E4 100%);}
+
+  /* header */
+  .hdr{display:flex; align-items:center; justify-content:space-between; padding:18px 18px 10px; gap:8px;}
+  .hdr .side{width:88px; display:flex; gap:6px;}
+  .icon-btn{width:38px; height:38px; border-radius:50%; border:none; background:rgba(255,255,255,.6);
+    display:flex; align-items:center; justify-content:center; font-size:19px; color:var(--ink);
+    cursor:pointer; backdrop-filter:blur(6px); transition:background .15s;}
+  .icon-btn:active{background:rgba(255,255,255,.95);}
+  .year-pick{display:flex; align-items:center; gap:10px; font-size:20px; font-weight:600; letter-spacing:.5px;}
+  .year-pick button{border:none; background:none; font-size:18px; color:var(--muted); cursor:pointer;
+    padding:6px; line-height:1; border-radius:8px;}
+  .year-pick button:active{color:var(--ink);}
+
+  /* month strip */
+  .mstrip{display:flex; gap:6px; overflow-x:auto; padding:6px 16px 12px; scrollbar-width:none;}
+  .mstrip::-webkit-scrollbar{display:none;}
+  .mstrip .m{flex:0 0 auto; padding:7px 14px; border-radius:20px; font-size:14px; font-weight:500;
+    color:var(--muted); background:transparent; border:none; cursor:pointer; white-space:nowrap; transition:all .15s;}
+  .mstrip .m.active{color:#fff; background:var(--ink); font-weight:600;}
+  .mstrip .m.has::after{content:''; display:inline-block; width:4px; height:4px; border-radius:50%;
+    background:var(--coral); margin-left:5px; vertical-align:middle;}
+  .mstrip .m.active.has::after{background:#fff;}
+
+  /* calendar */
+  .cal-title{padding:8px 22px 4px; font-size:15px; font-weight:600; color:var(--ink);}
+  .weekhdr{display:grid; grid-template-columns:repeat(7,1fr); padding:6px 14px 2px; gap:4px;}
+  .weekhdr span{text-align:center; font-size:11px; font-weight:600; letter-spacing:.5px; color:var(--muted);}
+  .weekhdr span.sun{color:#D98C86;}
+  .grid{display:grid; grid-template-columns:repeat(7,1fr); gap:6px; padding:6px 14px 20px;}
+  .cell{aspect-ratio:1/1; display:flex; align-items:center; justify-content:center;}
+  .day{width:100%; height:100%; border-radius:50%; display:flex; align-items:center; justify-content:center;
+    font-size:14px; color:var(--muted); cursor:pointer; background:rgba(255,255,255,.45);
+    border:1.5px solid transparent; position:relative; overflow:hidden; transition:transform .12s;
+    background-repeat:no-repeat; background-position:center center; background-size:cover;}
+  .day:active{transform:scale(.92);}
+  .day.today{border-color:var(--coral); color:var(--coral); font-weight:600;}
+  .day.filled{color:transparent;}
+  .day.filled .num{opacity:0;}
+  .day .num{position:relative; z-index:1;}
+  .day.empty{visibility:hidden;}
+
+  /* gallery */
+  .gallery{display:grid; grid-template-columns:repeat(4,1fr); gap:10px; padding:10px 18px 24px;}
+  .gitem{aspect-ratio:1/1; border-radius:50%; overflow:hidden; background:rgba(255,255,255,.5);
+    box-shadow:var(--shadow); cursor:pointer; background-size:cover; background-position:center; position:relative;}
+  .gitem .glabel{position:absolute; bottom:5px; left:0; right:0; text-align:center; font-size:10px;
+    color:#fff; text-shadow:0 1px 3px rgba(0,0,0,.5); font-weight:600;}
+  .empty-note{padding:60px 24px; text-align:center; color:var(--muted); font-size:14px; line-height:1.6;}
+
+  /* overview / stats */
+  .ov{padding:14px 20px 24px; display:flex; flex-direction:column; gap:16px;}
+  .ov-head{font-size:15px; font-weight:600; color:var(--ink);}
+  .yr-card{background:rgba(255,255,255,.55); border-radius:18px; padding:15px 16px; box-shadow:var(--shadow);
+    cursor:pointer;}
+  .yr-top{display:flex; justify-content:space-between; align-items:baseline; margin-bottom:9px;}
+  .yr-top .yl{font-size:17px; font-weight:600;}
+  .yr-top .yc{font-size:12px; color:var(--muted);}
+  .bar-track{height:10px; border-radius:6px; background:rgba(0,0,0,.06); overflow:hidden;}
+  .bar-fill{height:100%; border-radius:6px; background:linear-gradient(90deg,var(--coral),var(--butter));}
+  .mini-months{display:grid; grid-template-columns:repeat(12,1fr); gap:3px; margin-top:11px;}
+  .mm{display:flex; flex-direction:column; align-items:center; gap:3px;}
+  .mm-bar{width:100%; height:26px; background:rgba(0,0,0,.05); border-radius:4px; position:relative; overflow:hidden;}
+  .mm-fill{position:absolute; left:0; right:0; bottom:0; background:var(--sage); border-radius:4px;}
+  .mm-lb{font-size:8px; color:var(--muted);}
+
+  /* bottom nav */
+  .bnav{position:fixed; bottom:0; left:50%; transform:translateX(-50%); width:100%; max-width:460px;
+    display:flex; justify-content:center; gap:8px; padding:12px 0 22px;
+    background:linear-gradient(180deg, transparent, rgba(245,240,236,.9) 45%);}
+  .bnav .tab{width:52px; height:40px; border-radius:14px; border:none; cursor:pointer;
+    background:rgba(255,255,255,.6); font-size:17px; color:var(--muted); display:flex;
+    align-items:center; justify-content:center; backdrop-filter:blur(6px);}
+  .bnav .tab.active{background:var(--ink); color:#fff;}
+
+  /* daily */
+  .daily{display:flex; flex-direction:column; padding:0 18px 30px; gap:14px;}
+  .daily .dtitle{font-size:18px; font-weight:600; padding:2px 4px;}
+  .daily .dtitle .dow{font-size:13px; color:var(--muted); font-weight:500; margin-left:8px;}
+  .canvas-wrap{position:relative; width:100%; aspect-ratio:1/1; border-radius:20px; overflow:hidden;
+    background:var(--paper); box-shadow:var(--shadow);}
+  .canvas-wrap canvas{position:absolute; inset:0; width:100%; height:100%; touch-action:none;}
+  .tools{display:flex; align-items:center; gap:8px; flex-wrap:wrap;}
+  .swatches{display:flex; gap:7px;}
+  .sw{width:26px; height:26px; border-radius:50%; cursor:pointer; border:2px solid rgba(255,255,255,.85);
+    box-shadow:0 1px 4px rgba(0,0,0,.12);}
+  .sw.sel{outline:2px solid var(--ink); outline-offset:2px;}
+  .tool-btn{height:34px; padding:0 12px; border-radius:12px; border:1px solid var(--line);
+    background:rgba(255,255,255,.65); font-size:13px; color:var(--ink); cursor:pointer;
+    display:inline-flex; align-items:center; gap:5px; font-family:var(--font);}
+  .tool-btn:active{background:#fff;}
+  .tool-btn.on{background:var(--ink); color:#fff; border-color:var(--ink);}
+  .sizes{display:flex; gap:6px; align-items:center;}
+  .sizes .sz{width:30px; height:30px; border-radius:10px; border:1px solid var(--line);
+    background:rgba(255,255,255,.65); cursor:pointer; display:flex; align-items:center; justify-content:center;}
+  .sizes .sz.sel{border-color:var(--ink); background:#fff;}
+  .sizes .dot{border-radius:50%; background:var(--ink);}
+  .diary-text{width:100%; min-height:150px; resize:vertical; border:none; border-radius:18px;
+    padding:14px 16px; background-color:var(--paper); box-shadow:var(--shadow);
+    font-family:var(--font); font-size:15px; color:var(--ink); outline:none; line-height:32px;
+    background-image:repeating-linear-gradient(to bottom, transparent 0px, transparent 31px, var(--line) 31px, var(--line) 32px);
+    background-attachment:local; background-position:0 14px;}
+  .diary-text::placeholder{color:var(--muted);}
+  .save-row{display:flex; gap:10px; align-items:center;}
+  .save-btn{flex:1; height:48px; border-radius:16px; border:none; cursor:pointer; background:var(--ink);
+    color:#fff; font-size:15px; font-weight:600; font-family:var(--font);}
+  .save-btn:active{opacity:.85;}
+  .del-btn{height:48px; padding:0 18px; border-radius:16px; border:1px solid var(--line);
+    background:rgba(255,255,255,.65); color:#C15B4E; font-size:14px; cursor:pointer; font-family:var(--font);}
+  .saved-hint{font-size:12px; color:var(--sage); text-align:center; height:16px; transition:opacity .3s;}
+
+  /* settings sheet */
+  .sheet-mask{position:fixed; inset:0; background:rgba(40,35,30,.35); z-index:100; display:flex;
+    align-items:flex-end; justify-content:center; animation:fade .2s;}
+  @keyframes fade{from{opacity:0;}to{opacity:1;}}
+  .sheet{width:100%; max-width:460px; background:#fff; border-radius:24px 24px 0 0; padding:22px 22px 34px;
+    box-shadow:0 -8px 30px rgba(0,0,0,.15); animation:slideup .25s;}
+  @keyframes slideup{from{transform:translateY(30px);}to{transform:translateY(0);}}
+  .sheet h3{margin:0 0 4px; font-size:17px;}
+  .sheet .sub{font-size:12px; color:var(--muted); margin-bottom:16px;}
+  .sheet .group-lb{font-size:12px; color:var(--muted); margin:14px 0 8px; font-weight:600;}
+  .bg-presets{display:flex; gap:10px; flex-wrap:wrap;}
+  .bg-swatch{width:52px; height:52px; border-radius:14px; cursor:pointer; border:2px solid transparent;
+    box-shadow:0 1px 5px rgba(0,0,0,.1);}
+  .bg-swatch.sel{border-color:var(--ink);}
+  .bg-row{display:flex; gap:10px; margin-top:10px;}
+  .bg-action{flex:1; height:46px; border-radius:14px; border:1px solid var(--line); background:#FAF8F4;
+    font-size:14px; cursor:pointer; font-family:var(--font); display:flex; align-items:center;
+    justify-content:center; gap:6px; color:var(--ink);}
+  .bg-action input[type=color]{width:26px; height:26px; border:none; background:none; cursor:pointer; padding:0;}
+  .sheet-close{margin-top:20px; width:100%; height:48px; border-radius:16px; border:none; background:var(--ink);
+    color:#fff; font-size:15px; font-weight:600; cursor:pointer; font-family:var(--font);}
+  @media(min-width:520px){
+    html,body{height:100%; overflow:hidden;}
+    body{align-items:center; padding:24px 0;
+      background:radial-gradient(circle at 50% 25%, #3d3d45 0%, #26262c 72%);}
+    #app{width:392px; max-width:392px; min-height:0; height:min(844px, calc(100vh - 48px));
+      border-radius:46px; overflow-y:auto; overflow-x:hidden; padding-bottom:0;
+      box-shadow:0 30px 90px rgba(0,0,0,.42); position:relative;}
+    #app::-webkit-scrollbar{width:0; background:transparent;}
+    .bnav{position:sticky; left:auto; transform:none; width:100%; max-width:100%; margin-top:auto;}
+    .sheet-mask{position:absolute;}
+  }
+  input[type=file]{display:none;}
+</style>
+</head>
+<body>
+<div id="app"></div>
+
+<script>
+(function(){
+  "use strict";
+
+  // ---------- storage ----------
+  var KEY='hjdiary_v1', BGKEY='hjdiary_bg_v1';
+  function load(){ try{return JSON.parse(localStorage.getItem(KEY))||{};}catch(e){return {};} }
+  function save(data){ try{localStorage.setItem(KEY,JSON.stringify(data));}
+    catch(e){alert('저장 공간이 부족해요. 사진 용량을 줄이거나 오래된 일기를 지워주세요.');} }
+  var store=load();
+
+  // ---------- background ----------
+  var PRESETS={
+    'default':'radial-gradient(120% 80% at 50% 0%, #FBF7F0 0%, #F4EFE8 40%, transparent 70%), linear-gradient(180deg, #FBF7F0 0%, #EDE7F0 55%, #F5E3E4 100%)',
+    'cream':'linear-gradient(180deg,#FDF6EA 0%,#F5E9D6 100%)',
+    'sky':'linear-gradient(180deg,#EAF3FB 0%,#D6E6F5 100%)',
+    'sage':'linear-gradient(180deg,#EDF3EC 0%,#DCE9D9 100%)',
+    'peach':'linear-gradient(180deg,#FBEEE8 0%,#F6DCE0 100%)',
+    'dusk':'linear-gradient(180deg,#EDE7F5 0%,#E4D9EC 60%,#F3E0E2 100%)'
+  };
+  function loadBg(){ try{return JSON.parse(localStorage.getItem(BGKEY))||{type:'preset',value:'default'};}
+    catch(e){return {type:'preset',value:'default'};} }
+  function saveBg(bg){ try{localStorage.setItem(BGKEY,JSON.stringify(bg));}
+    catch(e){alert('배경 사진 용량이 너무 커요. 더 작은 사진을 써주세요.');} }
+  var bg=loadBg();
+  function applyBg(){
+    var b=app;
+    if(bg.type==='image'){
+      b.style.background='linear-gradient(rgba(255,255,255,.22),rgba(255,255,255,.22)), url('+bg.value+')';
+      b.style.backgroundSize='cover'; b.style.backgroundPosition='center';
+    }else if(bg.type==='color'){
+      b.style.background=bg.value;
+    }else{
+      b.style.background=PRESETS[bg.value]||PRESETS['default'];
+      b.style.backgroundSize='cover'; b.style.backgroundPosition='center';
+    }
+  }
+
+  // ---------- date helpers ----------
+  var MONTHS=['1월','2월','3월','4월','5월','6월','7월','8월','9월','10월','11월','12월'];
+  var DOW=['일','월','화','수','목','금','토'];
+  function key(y,m,d){return y+'-'+pad(m+1)+'-'+pad(d);}
+  function pad(n){return n<10?'0'+n:''+n;}
+  function daysInMonth(y,m){return new Date(y,m+1,0).getDate();}
+  function firstDow(y,m){return new Date(y,m,1).getDay();}
+  function daysInYear(y){return ((y%4===0&&y%100!==0)||y%400===0)?366:365;}
+
+  // ---------- state ----------
+  var today=new Date();
+  var state={view:'year', mode:'calendar', year:today.getFullYear(), month:today.getMonth(), day:today.getDate()};
+  var app=document.getElementById('app');
+
+  // ============================================================
+  //  YEAR VIEW
+  // ============================================================
+  function renderYear(){
+    app.innerHTML=''; app.style.paddingBottom='80px';
+    var hdr=el('div','hdr');
+    // left spacer
+    hdr.appendChild(el('div','side'));
+    // center year
+    var yp=el('div','year-pick');
+    var prev=document.createElement('button'); prev.textContent='‹';
+    var yl=document.createElement('span'); yl.textContent=state.year;
+    var next=document.createElement('button'); next.textContent='›';
+    prev.onclick=function(){state.year--; renderYear();};
+    next.onclick=function(){state.year++; renderYear();};
+    yp.appendChild(prev); yp.appendChild(yl); yp.appendChild(next);
+    hdr.appendChild(yp);
+    // right: settings + add
+    var rside=el('div','side'); rside.style.justifyContent='flex-end';
+    var gear=document.createElement('button'); gear.className='icon-btn'; gear.textContent='⚙';
+    gear.onclick=openSettings;
+    var add=document.createElement('button'); add.className='icon-btn'; add.textContent='+';
+    add.onclick=function(){openDay(state.year,state.month,today.getDate());};
+    rside.appendChild(gear); rside.appendChild(add);
+    hdr.appendChild(rside);
+    app.appendChild(hdr);
+
+    if(state.mode==='overview'){ renderOverview(); renderNav(); return; }
+
+    // month strip
+    var strip=el('div','mstrip');
+    MONTHS.forEach(function(name,i){
+      var b=document.createElement('button');
+      b.className='m'+(i===state.month?' active':'')+(monthHasEntry(state.year,i)?' has':'');
+      b.textContent=name;
+      b.onclick=function(){state.month=i; renderYear();};
+      strip.appendChild(b);
+    });
+    app.appendChild(strip);
+
+    if(state.mode==='calendar') renderCalendar(); else renderGallery();
+    renderNav();
+    var act=strip.querySelector('.m.active');
+    if(act) strip.scrollLeft=act.offsetLeft-strip.clientWidth/2+act.clientWidth/2;
+  }
+
+  function renderCalendar(){
+    var title=el('div','cal-title'); title.textContent=state.year+'년 '+MONTHS[state.month];
+    app.appendChild(title);
+    var wh=el('div','weekhdr');
+    DOW.forEach(function(d,i){var s=document.createElement('span'); s.textContent=d; if(i===0)s.className='sun'; wh.appendChild(s);});
+    app.appendChild(wh);
+    var grid=el('div','grid');
+    var fd=firstDow(state.year,state.month), dim=daysInMonth(state.year,state.month);
+    for(var i=0;i<fd;i++){var e=el('div','cell'); var ed=el('div','day empty'); e.appendChild(ed); grid.appendChild(e);}
+    for(var d=1;d<=dim;d++){ grid.appendChild(dayCell(d)); }
+    app.appendChild(grid);
+  }
+
+  function dayCell(d){
+    var cell=el('div','cell'); var day=el('div','day');
+    var k=key(state.year,state.month,d), entry=store[k];
+    var isToday=(state.year===today.getFullYear()&&state.month===today.getMonth()&&d===today.getDate());
+    if(isToday) day.classList.add('today');
+    if(entry&&entry.img){ day.classList.add('filled'); day.style.backgroundImage='url('+entry.img+')'; }
+    var num=el('span','num'); num.textContent=d; day.appendChild(num);
+    day.onclick=function(){openDay(state.year,state.month,d);};
+    cell.appendChild(day); return cell;
+  }
+
+  function renderGallery(){
+    var entries=Object.keys(store).filter(function(k){return k.indexOf(state.year+'-')===0&&store[k].img;}).sort();
+    if(entries.length===0){
+      var note=el('div','empty-note'); note.innerHTML='아직 그린 일기가 없어요.<br>날짜를 눌러 오늘의 그림일기를 시작해보세요.';
+      app.appendChild(note); return;
+    }
+    var g=el('div','gallery');
+    entries.forEach(function(k){
+      var p=k.split('-'); var it=el('div','gitem'); it.style.backgroundImage='url('+store[k].img+')';
+      var lb=el('div','glabel'); lb.textContent=parseInt(p[1],10)+'.'+parseInt(p[2],10); it.appendChild(lb);
+      it.onclick=function(){openDay(parseInt(p[0],10),parseInt(p[1],10)-1,parseInt(p[2],10));};
+      g.appendChild(it);
+    });
+    app.appendChild(g);
+  }
+
+  // ---------- overview (stats) ----------
+  function renderOverview(){
+    var wrap=el('div','ov');
+    var head=el('div','ov-head'); head.textContent='연도별 기록'; wrap.appendChild(head);
+    // collect years
+    var years={};
+    Object.keys(store).forEach(function(k){ if(store[k].img){ var y=k.slice(0,4); years[y]=(years[y]||0)+1; } });
+    var ylist=Object.keys(years).sort().reverse();
+    if(ylist.indexOf(String(state.year))<0) ylist.unshift(String(state.year));
+    if(ylist.length===0) ylist=[String(state.year)];
+
+    ylist.forEach(function(ys){
+      var y=parseInt(ys,10);
+      var count=countYear(y), total=daysInYear(y), pct=Math.round(count/total*1000)/10;
+      var card=el('div','yr-card');
+      var top=el('div','yr-top');
+      var yl=el('span','yl'); yl.textContent=y+'년';
+      var yc=el('span','yc'); yc.textContent=count+'일 · '+pct+'%';
+      top.appendChild(yl); top.appendChild(yc); card.appendChild(top);
+      var track=el('div','bar-track'); var fill=el('div','bar-fill');
+      fill.style.width=Math.max(pct,count>0?2:0)+'%'; track.appendChild(fill); card.appendChild(track);
+      // monthly mini bars
+      var mm=el('div','mini-months');
+      for(var m=0;m<12;m++){
+        var c=countMonth(y,m), dim=daysInMonth(y,m), r=c/dim;
+        var col=el('div','mm');
+        var mb=el('div','mm-bar'); var mf=el('div','mm-fill');
+        mf.style.height=(r*100)+'%'; mb.appendChild(mf); col.appendChild(mb);
+        var lb=el('div','mm-lb'); lb.textContent=(m+1); col.appendChild(lb);
+        mm.appendChild(col);
+      }
+      card.appendChild(mm);
+      card.onclick=function(){ state.year=y; state.mode='calendar'; renderYear(); };
+      wrap.appendChild(card);
+    });
+    app.appendChild(wrap);
+  }
+  function countYear(y){var pre=y+'-',n=0; for(var k in store){if(k.indexOf(pre)===0&&store[k].img)n++;} return n;}
+  function countMonth(y,m){var pre=y+'-'+pad(m+1)+'-',n=0; for(var k in store){if(k.indexOf(pre)===0&&store[k].img)n++;} return n;}
+
+  function renderNav(){
+    var nav=el('div','bnav');
+    var t0=tabBtn('◫', state.mode==='overview', function(){state.mode='overview'; renderYear();});
+    var t1=tabBtn('📅', state.mode==='calendar', function(){state.mode='calendar'; renderYear();});
+    var t2=tabBtn('◎', state.mode==='gallery', function(){state.mode='gallery'; renderYear();});
+    nav.appendChild(t0); nav.appendChild(t1); nav.appendChild(t2);
+    app.appendChild(nav);
+  }
+  function tabBtn(label,active,fn){var b=document.createElement('button'); b.className='tab'+(active?' active':'');
+    b.textContent=label; b.onclick=fn; return b;}
+
+  function monthHasEntry(y,m){var pre=y+'-'+pad(m+1)+'-'; for(var k in store){if(k.indexOf(pre)===0&&store[k].img)return true;} return false;}
+
+  // ============================================================
+  //  DAILY VIEW
+  // ============================================================
+  var draw={ctx:null,canvas:null,painting:false,color:'#33322E',size:4,eraser:false,dirty:false,last:null,cssW:0,cssH:0,pointerUpBound:false};
+
+  function openDay(y,m,d){ state.view='day'; state.year=y; state.month=m; state.day=d; renderDay(); }
+
+  function renderDay(){
+    app.innerHTML=''; app.style.paddingBottom='30px';
+    var k=key(state.year,state.month,state.day), entry=store[k]||{};
+    var hdr=el('div','hdr');
+    var back=document.createElement('button'); back.className='icon-btn'; back.textContent='‹';
+    back.onclick=function(){ autoSaveIfDirty(k); state.view='year'; renderYear(); };
+    var ls=el('div','side'); ls.appendChild(back); hdr.appendChild(ls);
+    hdr.appendChild(el('div','year-pick'));
+    hdr.appendChild(el('div','side'));
+    app.appendChild(hdr);
+
+    var wrap=el('div','daily');
+    var title=el('div','dtitle');
+    var dow=DOW[new Date(state.year,state.month,state.day).getDay()];
+    title.innerHTML=state.year+'년 '+(state.month+1)+'월 '+state.day+'일 <span class="dow">'+dow+'요일</span>';
+    wrap.appendChild(title);
+
+    var cw=el('div','canvas-wrap'); var canvas=document.createElement('canvas'); cw.appendChild(canvas); wrap.appendChild(cw);
+
+    var tools=el('div','tools');
+    var palette=[['#33322E'],['#E8836F'],['#8CA98B'],['#8FB5D6'],['#EBC26B'],['#A996C9']];
+    var sws=el('div','swatches');
+    palette.forEach(function(p){
+      var s=el('div','sw'); s.style.background=p[0]; if(p[0]===draw.color&&!draw.eraser)s.classList.add('sel');
+      s.onclick=function(){ draw.color=p[0]; draw.eraser=false;
+        sws.querySelectorAll('.sw').forEach(function(x){x.classList.remove('sel');}); s.classList.add('sel');
+        eraserBtn.classList.remove('on'); };
+      sws.appendChild(s);
+    });
+    tools.appendChild(sws);
+
+    var sizes=el('div','sizes');
+    [[8],[13],[18]].forEach(function(pair,idx){
+      var b=el('div','sz'); var dot=el('div','dot'); dot.style.width=pair[0]+'px'; dot.style.height=pair[0]+'px'; b.appendChild(dot);
+      var szv=[4,6,9][idx];
+      if(szv===draw.size)b.classList.add('sel');
+      b.onclick=function(){ draw.size=szv; sizes.querySelectorAll('.sz').forEach(function(x){x.classList.remove('sel');}); b.classList.add('sel'); };
+      sizes.appendChild(b);
+    });
+    tools.appendChild(sizes);
+
+    var eraserBtn=document.createElement('button'); eraserBtn.className='tool-btn'+(draw.eraser?' on':''); eraserBtn.textContent='지우개';
+    eraserBtn.onclick=function(){ draw.eraser=!draw.eraser; eraserBtn.classList.toggle('on',draw.eraser);
+      if(draw.eraser)sws.querySelectorAll('.sw').forEach(function(x){x.classList.remove('sel');}); };
+    tools.appendChild(eraserBtn);
+
+    var photoBtn=document.createElement('button'); photoBtn.className='tool-btn'; photoBtn.textContent='📷 사진';
+    var fileIn=document.createElement('input'); fileIn.type='file'; fileIn.accept='image/*';
+    photoBtn.onclick=function(){fileIn.click();};
+    fileIn.onchange=function(){ var f=fileIn.files[0]; if(!f)return; var r=new FileReader();
+      r.onload=function(){ var img=new Image(); img.onload=function(){drawPhotoCover(img); draw.dirty=true;}; img.src=r.result; };
+      r.readAsDataURL(f); };
+    tools.appendChild(photoBtn); tools.appendChild(fileIn);
+
+    var clearBtn=document.createElement('button'); clearBtn.className='tool-btn'; clearBtn.textContent='전체 지우기';
+    clearBtn.onclick=function(){ if(confirm('그림을 전부 지울까요?')){clearCanvas(); draw.dirty=true;} };
+    tools.appendChild(clearBtn);
+    wrap.appendChild(tools);
+
+    var ta=document.createElement('textarea'); ta.className='diary-text'; ta.placeholder='오늘 어떤 하루였어?'; ta.value=entry.text||'';
+    wrap.appendChild(ta);
+    draw.getText=function(){return ta.value;};
+
+    var hint=el('div','saved-hint'); hint.style.opacity='0';
+    var row=el('div','save-row');
+    var saveBtn=document.createElement('button'); saveBtn.className='save-btn'; saveBtn.textContent='저장하기';
+    saveBtn.onclick=function(){ doSave(k,canvas,ta.value,hint); };
+    row.appendChild(saveBtn);
+    if(store[k]){
+      var delBtn=document.createElement('button'); delBtn.className='del-btn'; delBtn.textContent='삭제';
+      delBtn.onclick=function(){ if(confirm('이 날의 일기를 삭제할까요?')){delete store[k]; save(store); state.view='year'; renderYear();} };
+      row.appendChild(delBtn);
+    }
+    wrap.appendChild(row); wrap.appendChild(hint);
+    app.appendChild(wrap);
+
+    draw.currentKey=k; draw.currentCanvas=canvas;
+    requestAnimationFrame(function(){ setupCanvas(canvas, entry.canvas); });
+  }
+
+  // ---------- canvas engine ----------
+  function setupCanvas(canvas,saved){
+    var ratio=window.devicePixelRatio||1;
+    var rect=canvas.getBoundingClientRect();
+    canvas.width=Math.round(rect.width*ratio); canvas.height=Math.round(rect.height*ratio);
+    var ctx=canvas.getContext('2d'); ctx.scale(ratio,ratio); ctx.lineCap='round'; ctx.lineJoin='round';
+    draw.ctx=ctx; draw.canvas=canvas; draw.dirty=false; draw.cssW=rect.width; draw.cssH=rect.height;
+    ctx.fillStyle='#FDFBF6'; ctx.fillRect(0,0,rect.width,rect.height);
+    if(saved){ var img=new Image(); img.onload=function(){ctx.drawImage(img,0,0,rect.width,rect.height);}; img.src=saved; }
+
+    function pos(e){ var r=canvas.getBoundingClientRect();
+      var cx=e.touches?e.touches[0].clientX:e.clientX, cy=e.touches?e.touches[0].clientY:e.clientY;
+      return {x:cx-r.left,y:cy-r.top}; }
+    function start(e){ e.preventDefault(); draw.painting=true; draw.last=pos(e); stroke(draw.last,draw.last); }
+    function move(e){ if(!draw.painting)return; e.preventDefault(); var p=pos(e); stroke(draw.last,p); draw.last=p; }
+    function end(){ draw.painting=false; draw.last=null; }
+    function stroke(a,b){ var c=draw.ctx; c.beginPath(); c.moveTo(a.x,a.y); c.lineTo(b.x,b.y);
+      c.lineWidth=draw.eraser?draw.size*4:draw.size; c.strokeStyle=draw.eraser?'#FDFBF6':draw.color; c.stroke(); draw.dirty=true; }
+    canvas.addEventListener('pointerdown',start);
+    canvas.addEventListener('pointermove',move);
+    if(!draw.pointerUpBound){ window.addEventListener('pointerup',function(){ draw.painting=false; draw.last=null; }); draw.pointerUpBound=true; }
+  }
+  function drawPhotoCover(img){ var ctx=draw.ctx; if(!ctx)return; var W=draw.cssW,H=draw.cssH;
+    var s=Math.max(W/img.width,H/img.height), w=img.width*s, h=img.height*s;
+    ctx.drawImage(img,(W-w)/2,(H-h)/2,w,h); }
+  function clearCanvas(){ var cv=draw.canvas; if(!cv)return; var ctx=cv.getContext('2d');
+    ctx.save(); ctx.setTransform(1,0,0,1,0,0); ctx.fillStyle='#FDFBF6'; ctx.fillRect(0,0,cv.width,cv.height); ctx.restore(); }
+
+  function doSave(k,canvas,text,hint){
+    var img=canvas.toDataURL('image/jpeg',0.7), full=canvas.toDataURL('image/png');
+    var hasDrawing=draw.dirty||(store[k]&&store[k].canvas);
+    if(!hasDrawing&&!text.trim()){ delete store[k]; save(store); showHint(hint,'저장할 내용이 없어요'); return; }
+    store[k]={img:img,canvas:full,text:text}; save(store); showHint(hint,'저장했어요 ✓');
+  }
+  function autoSaveIfDirty(k){
+    if(!draw.currentCanvas)return;
+    var text=draw.getText?draw.getText():'';
+    var hasDrawing=draw.dirty||(store[k]&&store[k].canvas);
+    if(hasDrawing||text.trim()){
+      store[k]={img:draw.currentCanvas.toDataURL('image/jpeg',0.7), canvas:draw.currentCanvas.toDataURL('image/png'), text:text};
+      save(store);
+    }
+  }
+  function showHint(hint,msg){ hint.textContent=msg; hint.style.opacity='1'; setTimeout(function(){hint.style.opacity='0';},1600); }
+
+  // ---------- settings sheet ----------
+  function openSettings(){
+    var mask=el('div','sheet-mask');
+    var sheet=el('div','sheet');
+    sheet.innerHTML='<h3>배경 꾸미기</h3><div class="sub">앱 전체 배경을 색이나 사진으로 바꿀 수 있어요.</div>';
+    var lb1=el('div','group-lb'); lb1.textContent='프리셋'; sheet.appendChild(lb1);
+    var pr=el('div','bg-presets');
+    Object.keys(PRESETS).forEach(function(name){
+      var s=el('div','bg-swatch'); s.style.background=PRESETS[name];
+      s.style.backgroundSize='cover';
+      if(bg.type==='preset'&&bg.value===name)s.classList.add('sel');
+      s.onclick=function(){ bg={type:'preset',value:name}; saveBg(bg); applyBg();
+        pr.querySelectorAll('.bg-swatch').forEach(function(x){x.classList.remove('sel');}); s.classList.add('sel'); };
+      pr.appendChild(s);
+    });
+    sheet.appendChild(pr);
+
+    var lb2=el('div','group-lb'); lb2.textContent='직접 지정'; sheet.appendChild(lb2);
+    var rowc=el('div','bg-row');
+    var colorLabel=document.createElement('label'); colorLabel.className='bg-action';
+    var colorInput=document.createElement('input'); colorInput.type='color';
+    colorInput.value=(bg.type==='color'?bg.value:'#EDE7F0');
+    colorInput.oninput=function(){ bg={type:'color',value:colorInput.value}; saveBg(bg); applyBg();
+      pr.querySelectorAll('.bg-swatch').forEach(function(x){x.classList.remove('sel');}); };
+    colorLabel.appendChild(document.createTextNode('색상 ')); colorLabel.appendChild(colorInput);
+    rowc.appendChild(colorLabel);
+
+    var photoLabel=document.createElement('label'); photoLabel.className='bg-action'; photoLabel.textContent='📷 사진 배경';
+    var photoInput=document.createElement('input'); photoInput.type='file'; photoInput.accept='image/*';
+    photoInput.onchange=function(){ var f=photoInput.files[0]; if(!f)return; var r=new FileReader();
+      r.onload=function(){ bg={type:'image',value:r.result}; saveBg(bg); applyBg();
+        pr.querySelectorAll('.bg-swatch').forEach(function(x){x.classList.remove('sel');}); }; r.readAsDataURL(f); };
+    photoLabel.appendChild(photoInput);
+    rowc.appendChild(photoLabel);
+    sheet.appendChild(rowc);
+
+    var reset=el('div','bg-row');
+    var rb=el('div','bg-action'); rb.textContent='기본으로 되돌리기';
+    rb.onclick=function(){ bg={type:'preset',value:'default'}; saveBg(bg); applyBg(); close(); };
+    reset.appendChild(rb); sheet.appendChild(reset);
+
+    var cl=document.createElement('button'); cl.className='sheet-close'; cl.textContent='완료'; cl.onclick=close;
+    sheet.appendChild(cl);
+
+    function close(){ document.body.removeChild(mask); }
+    mask.onclick=function(e){ if(e.target===mask) close(); };
+    mask.appendChild(sheet); document.body.appendChild(mask);
+  }
+
+  // ---------- util ----------
+  function el(tag,cls){var e=document.createElement(tag); if(cls)e.className=cls; return e;}
+
+  // ---------- go ----------
+  applyBg();
+  renderYear();
+})();
+</script>
+</body>
+</html>
