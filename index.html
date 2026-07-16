@@ -873,6 +873,21 @@
     upBtn.onclick=function(){ status.textContent='올리는 중...'; doPush(function(ok){ status.textContent=ok?'올리기 완료':'올리기 실패'; }); };
     downBtn.onclick=function(){ status.textContent='받는 중...'; pullSync(function(){ status.textContent='받기 완료'; if(state.view==='year')renderYear(); }); };
 
+    var srow3=el('div','sync-row'); srow3.style.marginTop='8px';
+    var linkBtn=el('div','bg-action'); linkBtn.textContent='📋 연결 링크 복사'; linkBtn.style.flex='1';
+    linkBtn.onclick=function(){
+      if(!syncCfg||!syncCfg.key||!syncCfg.bin){ status.textContent='먼저 연결부터 해줘'; return; }
+      var base=location.origin+location.pathname;
+      var hash='#k='+encodeURIComponent(syncCfg.key)+'&b='+encodeURIComponent(syncCfg.bin)+'&t='+(syncCfg.keyType||'access');
+      var url=base+hash;
+      if(navigator.clipboard&&navigator.clipboard.writeText){
+        navigator.clipboard.writeText(url).then(function(){ status.textContent='링크 복사됨! 다른 기기에서 열면 자동 연결돼'; });
+      }else{
+        prompt('이 링크를 복사해서 다른 기기에서 열어:',url); status.textContent='링크가 위에 떴어 — 복사해';
+      }
+    };
+    srow3.appendChild(linkBtn); sheet.appendChild(srow3);
+
     var cl=document.createElement('button'); cl.className='sheet-close'; cl.textContent='완료'; cl.onclick=close;
     sheet.appendChild(cl);
 
@@ -885,6 +900,16 @@
   function el(tag,cls){var e=document.createElement(tag); if(cls)e.className=cls; return e;}
 
   // ---------- go ----------
+  // URL 해시로 동기화 연결: #k=KEY&b=BIN&t=access|master
+  (function parseHash(){
+    var h=location.hash.slice(1); if(!h) return;
+    var p={}; h.split('&').forEach(function(kv){ var s=kv.split('='); if(s.length===2) p[s[0]]=decodeURIComponent(s[1]); });
+    if(p.k&&p.b){
+      syncCfg={key:p.k, bin:p.b, keyType:p.t||'access'};
+      saveSyncCfg(syncCfg);
+      history.replaceState(null,'',location.pathname+location.search); // 해시 제거 (주소창에 키 안 남게)
+    }
+  })();
   applyBg();
   renderYear();
   if(syncCfg&&syncCfg.key&&syncCfg.bin){ pullSync(function(){ if(state.view==='year') renderYear(); }); }
