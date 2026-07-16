@@ -1024,6 +1024,24 @@
   // ---------- util ----------
   function el(tag,cls){var e=document.createElement(tag); if(cls)e.className=cls; return e;}
 
+  // ---------- swipe nav (모바일 좌우 스와이프로 탭 전환) ----------
+  (function(){
+    var MODES=['overview','calendar','gallery'];
+    var sx=0, sy=0, swiping=false;
+    app.addEventListener('touchstart', function(e){
+      if(state.view!=='year') return;
+      var t=e.touches[0]; sx=t.clientX; sy=t.clientY; swiping=true;
+    }, {passive:true});
+    app.addEventListener('touchend', function(e){
+      if(!swiping||state.view!=='year') return; swiping=false;
+      var t=e.changedTouches[0]; var dx=t.clientX-sx, dy=t.clientY-sy;
+      if(Math.abs(dx)<50||Math.abs(dy)>Math.abs(dx)) return; // 너무 짧거나 세로 스크롤
+      var ci=MODES.indexOf(state.mode); if(ci<0) ci=1;
+      if(dx<0 && ci<MODES.length-1){ state.mode=MODES[ci+1]; renderYear(); } // 왼쪽 스와이프 = 다음
+      else if(dx>0 && ci>0){ state.mode=MODES[ci-1]; renderYear(); } // 오른쪽 스와이프 = 이전
+    }, {passive:true});
+  })();
+
   // ---------- go ----------
   // URL 해시로 동기화 연결: #k=KEY&b=BIN&t=access|master
   (function parseHash(){
