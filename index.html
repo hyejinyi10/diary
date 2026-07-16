@@ -218,6 +218,12 @@
   function saveSyncCfg(c){ try{localStorage.setItem('hjdiary_sync',JSON.stringify(c));}catch(e){} }
   var syncCfg=loadSync(), pushTimer=null;
   function setSyncStatus(t){ var e=document.getElementById('syncStatus'); if(e)e.textContent=t; }
+  function authHdr(base, keyOverride, typeOverride){
+    base=base||{};
+    var k=keyOverride||(syncCfg&&syncCfg.key), ty=typeOverride||(syncCfg&&syncCfg.keyType)||'master';
+    if(ty==='access') base['X-Access-Key']=k; else base['X-Master-Key']=k;
+    return base;
+  }
   function mergeStores(a,b){ var out={},keys={}; a=a||{}; b=b||{};
     Object.keys(a).forEach(function(k){keys[k]=1;}); Object.keys(b).forEach(function(k){keys[k]=1;});
     Object.keys(keys).forEach(function(k){ var x=a[k],y=b[k];
@@ -226,14 +232,14 @@
   function pushSync(){ if(!syncCfg||!syncCfg.key||!syncCfg.bin)return; clearTimeout(pushTimer); pushTimer=setTimeout(function(){doPush();},1500); }
   function doPush(cb){ if(!syncCfg||!syncCfg.key||!syncCfg.bin){ if(cb)cb(false); return; }
     fetch('https://api.jsonbin.io/v3/b/'+syncCfg.bin,{method:'PUT',
-      headers:{'Content-Type':'application/json','X-Master-Key':syncCfg.key},body:JSON.stringify(store)})
-     .then(function(r){ setSyncStatus(r.ok?'동기화됨':'업로드 실패'); if(cb)cb(r.ok); })
+      headers:authHdr({'Content-Type':'application/json'}),body:JSON.stringify(store)})
+     .then(function(r){ setSyncStatus(r.ok?'동기화됨':'업로드 실패(키·권한 확인)'); if(cb)cb(r.ok); })
      .catch(function(){ setSyncStatus('오프라인'); if(cb)cb(false); }); }
   function pullSync(cb){ if(!syncCfg||!syncCfg.key||!syncCfg.bin){ if(cb)cb(); return; }
-    fetch('https://api.jsonbin.io/v3/b/'+syncCfg.bin+'/latest',{headers:{'X-Master-Key':syncCfg.key}})
+    fetch('https://api.jsonbin.io/v3/b/'+syncCfg.bin+'/latest',{headers:authHdr({})})
      .then(function(r){ return r.json(); }).then(function(j){ var remote=(j&&j.record)||{};
        store=mergeStores(store,remote); save(store); setSyncStatus('동기화됨'); if(cb)cb(); })
-     .catch(function(){ setSyncStatus('받기 실패'); if(cb)cb(); }); }
+     .catch(function(){ setSyncStatus('받기 실패(키·권한 확인)'); if(cb)cb(); }); }
 
   // ---------- background ----------
   var PRESETS={
@@ -828,10 +834,22 @@
     reset.appendChild(rb); sheet.appendChild(reset);
 
     var lb3=el('div','group-lb'); lb3.textContent='클라우드 동기화 (JSONBin)'; sheet.appendChild(lb3);
+    var selType=(syncCfg&&syncCfg.keyType)||'access';
+    var typeRow=el('div','sync-row'); typeRow.style.marginBottom='8px';
+    var accBtn=el('div','bg-action'); accBtn.textContent='Access Key (권장)'; accBtn.style.flex='1';
+    var masBtn=el('div','bg-action'); masBtn.textContent='Master Key'; masBtn.style.flex='1';
     var keyIn=document.createElement('input'); keyIn.className='sync-in'; keyIn.type='password';
-    keyIn.placeholder='X-Master-Key'; keyIn.value=syncCfg?syncCfg.key:'';
+    keyIn.value=syncCfg?syncCfg.key:'';
+    function paintType(){
+      accBtn.style.background=selType==='access'?'var(--ink)':'#FAF8F4'; accBtn.style.color=selType==='access'?'#fff':'var(--ink)';
+      masBtn.style.background=selType==='master'?'var(--ink)':'#FAF8F4'; masBtn.style.color=selType==='master'?'#fff':'var(--ink)';
+      keyIn.placeholder=selType==='access'?'X-Access-Key 값 붙여넣기':'X-Master-Key 값 붙여넣기';
+    }
+    accBtn.onclick=function(){ selType='access'; paintType(); };
+    masBtn.onclick=function(){ selType='master'; paintType(); };
+    typeRow.appendChild(accBtn); typeRow.appendChild(masBtn); sheet.appendChild(typeRow);
     var binIn=document.createElement('input'); binIn.className='sync-in'; binIn.placeholder='Bin ID'; binIn.value=syncCfg?syncCfg.bin:'';
-    sheet.appendChild(keyIn); sheet.appendChild(binIn);
+    sheet.appendChild(keyIn); sheet.appendChild(binIn); paintType();
     var srow=el('div','sync-row');
     var connBtn=el('div','bg-action'); connBtn.textContent='연결·동기화'; connBtn.style.flex='1';
     var newBtn=el('div','bg-action'); newBtn.textContent='새 Bin 만들기'; newBtn.style.flex='1';
@@ -842,16 +860,16 @@
     srow2.appendChild(upBtn); srow2.appendChild(downBtn); sheet.appendChild(srow2);
     var status=el('div','sync-status'); status.id='syncStatus'; status.textContent=syncCfg?'연결됨':'미연결'; sheet.appendChild(status);
 
-    connBtn.onclick=function(){ syncCfg={key:keyIn.value.trim(),bin:binIn.value.trim()};
+    connBtn.onclick=function(){ syncCfg={key:keyIn.value.trim(),bin:binIn.value.trim(),keyType:selType};
       if(!syncCfg.key||!syncCfg.bin){ status.textContent='키와 Bin ID를 모두 입력해줘'; return; }
       saveSyncCfg(syncCfg); status.textContent='동기화 중...';
       pullSync(function(){ doPush(function(){ status.textContent='연결됨 · 동기화 완료'; if(state.view==='year')renderYear(); }); }); };
     newBtn.onclick=function(){ var kk=keyIn.value.trim(); if(!kk){status.textContent='먼저 키를 입력해줘'; return;}
       status.textContent='생성 중...';
-      fetch('https://api.jsonbin.io/v3/b',{method:'POST',headers:{'Content-Type':'application/json','X-Master-Key':kk,'X-Bin-Name':'hyejin-diary'},body:JSON.stringify(store)})
+      fetch('https://api.jsonbin.io/v3/b',{method:'POST',headers:authHdr({'Content-Type':'application/json','X-Bin-Name':'hyejin-diary'}, kk, selType),body:JSON.stringify(store)})
        .then(function(r){return r.json();}).then(function(j){ var id=j&&j.metadata&&j.metadata.id;
-         if(id){ binIn.value=id; syncCfg={key:kk,bin:id}; saveSyncCfg(syncCfg); status.textContent='새 Bin 생성됨 · ID가 채워졌어'; }
-         else status.textContent='생성 실패'; }).catch(function(){ status.textContent='생성 실패(네트워크)'; }); };
+         if(id){ binIn.value=id; syncCfg={key:kk,bin:id,keyType:selType}; saveSyncCfg(syncCfg); status.textContent='새 Bin 생성됨 · ID가 채워졌어'; }
+         else status.textContent='생성 실패 (Access Key라면 Create 권한 확인)'; }).catch(function(){ status.textContent='생성 실패(네트워크)'; }); };
     upBtn.onclick=function(){ status.textContent='올리는 중...'; doPush(function(ok){ status.textContent=ok?'올리기 완료':'올리기 실패'; }); };
     downBtn.onclick=function(){ status.textContent='받는 중...'; pullSync(function(){ status.textContent='받기 완료'; if(state.view==='year')renderYear(); }); };
 
