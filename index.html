@@ -185,6 +185,17 @@
   .stk-item:active{transform:scale(.88);}
   .stk-item img{width:40px; height:40px; object-fit:contain;}
   .stk-item .emo{font-size:30px; line-height:1;}
+  .q-row{display:flex; align-items:center; gap:6px; margin-top:12px;}
+  .q-lb{font-size:12px; color:var(--muted); margin-right:2px;}
+  .q-btn{flex:1; padding:8px 0; border-radius:12px; border:1.5px solid var(--line); background:#fff; font-family:var(--font); font-size:13px; font-weight:600; color:var(--muted); cursor:pointer;}
+  .q-btn.on{background:var(--ink); color:#fff; border-color:var(--ink);}
+  .slot-row{display:flex; align-items:center; gap:7px; margin:2px 0 10px;}
+  .slot-pill{width:30px; height:30px; border-radius:50%; border:1.5px solid var(--line); background:#fff; font-family:var(--font); font-size:13px; font-weight:700; color:var(--muted); cursor:pointer; padding:0; line-height:1;}
+  .slot-pill.has{border-color:var(--ink); color:var(--ink);}
+  .slot-pill.cur{background:var(--ink); color:#fff; border-color:var(--ink);}
+  .slot-hint{font-size:11px; color:var(--muted); margin-left:4px;}
+  .day{position:relative;}
+  .cnt-badge{position:absolute; top:3px; right:3px; min-width:15px; height:15px; padding:0 3px; border-radius:8px; background:var(--ink); color:#fff; font-size:10px; font-weight:700; line-height:15px; text-align:center;}
   .bg-row{display:flex; gap:10px; margin-top:10px;}
   .opacity-row{margin-top:12px;}
   .opacity-row label{font-size:13px; color:var(--muted); display:flex; align-items:center; gap:10px;}
@@ -323,11 +334,14 @@
   function pad(n){return n<10?'0'+n:''+n;}
   function daysInMonth(y,m){return new Date(y,m+1,0).getDate();}
   function firstDow(y,m){return new Date(y,m,1).getDay();}
+  function slotKey(y,m,d,slot){ var b=key(y,m,d); return (slot&&slot>1)?b+'#'+slot:b; }
+  function baseOf(k){ var i=k.indexOf('#'); return i<0?k:k.slice(0,i); }
+  function liveEntry(k){ var e=store[k]; return (e&&!e.deleted)?e:null; }
   function daysInYear(y){return ((y%4===0&&y%100!==0)||y%400===0)?366:365;}
 
   // ---------- state ----------
   var today=new Date();
-  var state={view:'year', mode:'calendar', year:today.getFullYear(), month:today.getMonth(), day:today.getDate()};
+  var state={view:'year', mode:'calendar', year:today.getFullYear(), month:today.getMonth(), day:today.getDate(), slot:1};
   var app=document.getElementById('app');
 
   // ============================================================
@@ -391,26 +405,29 @@
 
   function dayCell(d){
     var cell=el('div','cell'); var day=el('div','day');
-    var k=key(state.year,state.month,d), entry=store[k];
     var isToday=(state.year===today.getFullYear()&&state.month===today.getMonth()&&d===today.getDate());
     if(isToday) day.classList.add('today');
-    if(entry&&entry.img){ day.classList.add('filled'); day.style.backgroundImage='url('+entry.img+')'; }
+    var thumb=null, cnt=0;
+    for(var n=1;n<=3;n++){ var e=liveEntry(slotKey(state.year,state.month,d,n)); if(e&&e.img){ if(!thumb)thumb=e.img; cnt++; } }
+    if(thumb){ day.classList.add('filled'); day.style.backgroundImage='url('+thumb+')'; }
     var num=el('span','num'); num.textContent=d; day.appendChild(num);
-    day.onclick=function(){openDay(state.year,state.month,d);};
+    if(cnt>1){ var bdg=el('span','cnt-badge'); bdg.textContent=cnt; day.appendChild(bdg); }
+    day.onclick=function(){openDay(state.year,state.month,d,1);};
     cell.appendChild(day); return cell;
   }
 
   function renderGallery(){
-    var entries=Object.keys(store).filter(function(k){return k.indexOf(state.year+'-')===0&&store[k].img;}).sort();
+    var entries=Object.keys(store).filter(function(k){return baseOf(k).indexOf(state.year+'-')===0&&store[k]&&store[k].img&&!store[k].deleted;}).sort();
     if(entries.length===0){
       var note=el('div','empty-note'); note.innerHTML='아직 그린 일기가 없어요.<br>날짜를 눌러 오늘의 그림일기를 시작해보세요.';
       app.appendChild(note); return;
     }
     var g=el('div','gallery');
     entries.forEach(function(k){
-      var p=k.split('-'); var it=el('div','gitem'); it.style.backgroundImage='url('+store[k].img+')';
+      var base=baseOf(k); var p=base.split('-'); var slotN=k.indexOf('#')>=0?parseInt(k.split('#')[1],10):1;
+      var it=el('div','gitem'); it.style.backgroundImage='url('+store[k].img+')';
       var lb=el('div','glabel'); lb.textContent=parseInt(p[1],10)+'.'+parseInt(p[2],10); it.appendChild(lb);
-      it.onclick=function(){openDay(parseInt(p[0],10),parseInt(p[1],10)-1,parseInt(p[2],10));};
+      it.onclick=(function(pp,sn){return function(){openDay(parseInt(pp[0],10),parseInt(pp[1],10)-1,parseInt(pp[2],10),sn);};})(p,slotN);
       g.appendChild(it);
     });
     app.appendChild(g);
@@ -453,8 +470,8 @@
     });
     app.appendChild(wrap);
   }
-  function countYear(y){var pre=y+'-',n=0; for(var k in store){if(k.indexOf(pre)===0&&store[k].img)n++;} return n;}
-  function countMonth(y,m){var pre=y+'-'+pad(m+1)+'-',n=0; for(var k in store){if(k.indexOf(pre)===0&&store[k].img)n++;} return n;}
+  function countYear(y){var pre=y+'-',seen={}; for(var k in store){if(baseOf(k).indexOf(pre)===0&&store[k]&&store[k].img&&!store[k].deleted)seen[baseOf(k)]=1;} return Object.keys(seen).length;}
+  function countMonth(y,m){var pre=y+'-'+pad(m+1)+'-',seen={}; for(var k in store){if(baseOf(k).indexOf(pre)===0&&store[k]&&store[k].img&&!store[k].deleted)seen[baseOf(k)]=1;} return Object.keys(seen).length;}
 
   function renderNav(){
     var nav=el('div','bnav');
@@ -467,7 +484,7 @@
   function tabBtn(label,active,fn){var b=document.createElement('button'); b.className='tab'+(active?' active':'');
     b.textContent=label; b.onclick=fn; return b;}
 
-  function monthHasEntry(y,m){var pre=y+'-'+pad(m+1)+'-'; for(var k in store){if(k.indexOf(pre)===0&&store[k].img)return true;} return false;}
+  function monthHasEntry(y,m){var pre=y+'-'+pad(m+1)+'-'; for(var k in store){if(baseOf(k).indexOf(pre)===0&&store[k]&&store[k].img&&!store[k].deleted)return true;} return false;}
 
   // ============================================================
   //  DAILY VIEW  (object-based editor)
@@ -481,11 +498,12 @@
     action:null, start:null, pointerUpBound:false, dirty:false,
     getText:null, currentKey:null, syncTools:null };
 
-  function openDay(y,m,d){ state.view='day'; state.year=y; state.month=m; state.day=d; renderDay(); }
+  function openDay(y,m,d,slot){ state.view='day'; state.year=y; state.month=m; state.day=d; state.slot=slot||1; renderDay(); }
 
   function renderDay(){
     app.innerHTML=''; app.style.paddingBottom='30px';
-    var k=key(state.year,state.month,state.day), entry=store[k]||{};
+    var slot=state.slot||1;
+    var k=slotKey(state.year,state.month,state.day,slot), entry=store[k]||{};
 
     var hdr=el('div','hdr');
     var back=document.createElement('button'); back.className='icon-btn'; back.textContent='‹';
@@ -500,6 +518,19 @@
     var dow=DOW[new Date(state.year,state.month,state.day).getDay()];
     title.innerHTML=state.year+'년 '+(state.month+1)+'월 '+state.day+'일 <span class="dow">'+dow+'요일</span>';
     wrap.appendChild(title);
+
+    var slotRow=el('div','slot-row');
+    for(var _si=1;_si<=3;_si++){ (function(n){
+      var sk=slotKey(state.year,state.month,state.day,n);
+      var has=!!liveEntry(sk);
+      var b=document.createElement('button');
+      b.className='slot-pill'+(n===slot?' cur':'')+(has?' has':'');
+      b.textContent=n;
+      b.onclick=function(){ if(n===slot)return; autoSaveDay(k); state.slot=n; renderDay(); };
+      slotRow.appendChild(b);
+    })(_si); }
+    var slotHint=el('span','slot-hint'); slotHint.textContent='하루 최대 3개'; slotRow.appendChild(slotHint);
+    wrap.appendChild(slotRow);
 
     var cw=el('div','canvas-wrap'); var canvas=document.createElement('canvas'); cw.appendChild(canvas); wrap.appendChild(cw);
 
@@ -524,10 +555,13 @@
     modebar.appendChild(stkBtn);
 
     modebar.appendChild(el('div','spacer'));
+    var undoBtn=document.createElement('button'); undoBtn.className='obj-tool'; undoBtn.textContent='↩'; undoBtn.title='되돌리기';
+    undoBtn.onclick=function(){ doUndo(); };
+    modebar.appendChild(undoBtn);
     var frontBtn=document.createElement('button'); frontBtn.className='obj-tool'; frontBtn.textContent='⬆'; frontBtn.title='맨 앞으로';
-    frontBtn.onclick=function(){ if(ED.selected){ var i=ED.objects.indexOf(ED.selected); if(i>=0){ED.objects.splice(i,1); ED.objects.push(ED.selected);} redraw(); } };
+    frontBtn.onclick=function(){ if(ED.selected){ pushHistory(); var i=ED.objects.indexOf(ED.selected); if(i>=0){ED.objects.splice(i,1); ED.objects.push(ED.selected);} ED.dirty=true; redraw(); syncTools(); } };
     var delBtn2=document.createElement('button'); delBtn2.className='obj-tool danger'; delBtn2.textContent='🗑'; delBtn2.title='선택 삭제';
-    delBtn2.onclick=function(){ if(ED.selected){ var i=ED.objects.indexOf(ED.selected); if(i>=0)ED.objects.splice(i,1); ED.selected=null; ED.dirty=true; redraw(); syncTools(); } };
+    delBtn2.onclick=function(){ if(ED.selected){ pushHistory(); var i=ED.objects.indexOf(ED.selected); if(i>=0)ED.objects.splice(i,1); ED.selected=null; ED.dirty=true; redraw(); syncTools(); } };
     modebar.appendChild(frontBtn); modebar.appendChild(delBtn2);
     wrap.appendChild(modebar);
 
@@ -593,6 +627,8 @@
       var has=!!ED.selected && ED.mode==='select';
       frontBtn.style.display=has?'':'none'; delBtn2.style.display=has?'':'none';
       tip.style.display = ED.mode==='draw' ? 'none' : '';
+      var canUndo=(ED.history&&ED.history.length)||ED.mode==='draw';
+      undoBtn.disabled=!canUndo; undoBtn.style.opacity=canUndo?'1':'.35';
     };
     syncTools=ED.syncTools;
 
@@ -602,6 +638,16 @@
   // ---------- editor engine ----------
   var syncTools=function(){};
 
+  function snapObjs(){ return ED.objects.map(function(o){ var d={type:o.type,src:o.src,x:o.x,y:o.y,w:o.w,h:o.h,rot:o.rot||0}; if(o.emoji)d.emoji=o.emoji; return d; }); }
+  function pushHistory(){ if(!ED.history)ED.history=[]; ED.history.push(snapObjs()); if(ED.history.length>40)ED.history.shift(); }
+  function doUndo(){
+    if(ED.mode==='draw' && ED.hasStroke){ ED.strokeCv=null; ED.strokeCtx=null; ED.hasStroke=false; redraw(); if(syncTools)syncTools(); return; }
+    if(!ED.history||!ED.history.length)return;
+    var snap=ED.history.pop();
+    ED.objects=snap.map(function(o){ var c={type:o.type,src:o.src,x:o.x,y:o.y,w:o.w,h:o.h,rot:o.rot||0}; if(o.emoji)c.emoji=o.emoji; loadObjImg(c); return c; });
+    ED.selected=null; ED.dirty=true; redraw(); if(syncTools)syncTools();
+  }
+
   function initEditor(canvas, entry){
     var dpr=window.devicePixelRatio||1;
     var rect=canvas.getBoundingClientRect();
@@ -609,7 +655,7 @@
     var ctx=canvas.getContext('2d'); ctx.scale(dpr,dpr);
     ED.canvas=canvas; ED.ctx=ctx; ED.W=rect.width; ED.H=rect.height; ED.dpr=dpr;
     ED.objects=[]; ED.selected=null; ED.mode='select'; ED.strokeCv=null; ED.strokeCtx=null;
-    ED.hasStroke=false; ED.drawing=false; ED.action=null; ED.dirty=false;
+    ED.hasStroke=false; ED.drawing=false; ED.action=null; ED.dirty=false; ED.history=[];
 
     if(entry.objects && entry.objects.length){
       entry.objects.forEach(function(o){
@@ -679,7 +725,7 @@
   function dist(a,b){ var dx=a.x-b.x, dy=a.y-b.y; return Math.sqrt(dx*dx+dy*dy); }
 
   function onDown(e){
-    e.preventDefault(); var p=pos(e);
+    e.preventDefault(); var p=pos(e); ED.snap=false;
     if(ED.mode==='draw'){ startStroke(p); return; }
     if(ED.selected){
       var h=handleAt(ED.selected,p);
@@ -697,6 +743,7 @@
     if(ED.mode==='draw'){ if(ED.drawing){ e.preventDefault(); drawTo(p);} return; }
     if(!ED.action||!ED.selected) return;
     e.preventDefault(); var o=ED.selected, s=ED.start;
+    if(!ED.snap){ pushHistory(); ED.snap=true; if(syncTools)syncTools(); }
     if(ED.action==='move'){ o.x=s.x+(p.x-s.p.x); o.y=s.y+(p.y-s.p.y); ED.dirty=true; }
     else if(ED.action==='resize'){
       var l=toLocal(o,p); var scale=Math.max(Math.abs(l.x)/(s.w/2), Math.abs(l.y)/(s.h/2)); scale=Math.max(scale,0.05);
@@ -738,7 +785,7 @@
     var out=document.createElement('canvas'); out.width=bw; out.height=bh;
     out.getContext('2d').drawImage(cv,minX,minY,bw,bh,0,0,bw,bh);
     var o={type:'drawing', src:out.toDataURL('image/png'), x:minX/ED.dpr, y:minY/ED.dpr, w:bw/ED.dpr, h:bh/ED.dpr, rot:0};
-    loadObjImg(o); ED.objects.push(o);
+    pushHistory(); loadObjImg(o); ED.objects.push(o);
     ED.strokeCv=null; ED.strokeCtx=null; ED.hasStroke=false;
   }
 
@@ -748,7 +795,7 @@
       var ratio=im.width/im.height, w=ED.W*0.7, h=w/ratio;
       if(h>ED.H*0.7){ h=ED.H*0.7; w=h*ratio; }
       var o={type:'photo', src:src, _img:im, x:(ED.W-w)/2, y:(ED.H-h)/2, w:w, h:h, rot:0};
-      ED.objects.push(o); ED.selected=o; setMode('select'); ED.dirty=true; redraw(); ED.syncTools();
+      pushHistory(); ED.objects.push(o); ED.selected=o; setMode('select'); ED.dirty=true; redraw(); ED.syncTools();
     };
     im.src=src;
   }
@@ -776,7 +823,7 @@
       if(!s)return;
       var im=new Image(); im.onload=function(){
         var o={type:'sticker',src:s.s,_img:im,x:(ED.W-sz)/2,y:(ED.H-sz)/2,w:sz,h:sz,rot:0};
-        ED.objects.push(o); ED.selected=o; setMode('select'); ED.dirty=true; redraw(); if(ED.syncTools)ED.syncTools();
+        pushHistory(); ED.objects.push(o); ED.selected=o; setMode('select'); ED.dirty=true; redraw(); if(ED.syncTools)ED.syncTools();
       }; im.src=s.s;
     } else {
       var cv=document.createElement('canvas'); cv.width=128; cv.height=128;
@@ -785,7 +832,7 @@
       var src=cv.toDataURL('image/png');
       var im=new Image(); im.onload=function(){
         var o={type:'emoji',emoji:value,src:src,_img:im,x:(ED.W-sz)/2,y:(ED.H-sz)/2,w:sz,h:sz,rot:0};
-        ED.objects.push(o); ED.selected=o; setMode('select'); ED.dirty=true; redraw(); if(ED.syncTools)ED.syncTools();
+        pushHistory(); ED.objects.push(o); ED.selected=o; setMode('select'); ED.dirty=true; redraw(); if(ED.syncTools)ED.syncTools();
       }; im.src=src;
     }
   }
@@ -887,17 +934,30 @@
     stage.addEventListener('pointerdown',down); stage.addEventListener('pointermove',move);
     stage.addEventListener('pointerup',up); stage.addEventListener('pointerleave',up);
 
+    var quality='mid';
+    var qWrap=el('div','q-row');
+    var qlb=el('div','q-lb'); qlb.textContent='화질'; qWrap.appendChild(qlb);
+    var qBtns={};
+    [['low','저화질'],['mid','중간'],['high','고화질']].forEach(function(pair){
+      var b=document.createElement('button'); b.className='q-btn'+(pair[0]===quality?' on':''); b.textContent=pair[1];
+      b.onclick=function(){ quality=pair[0]; Object.keys(qBtns).forEach(function(kk){qBtns[kk].classList.toggle('on',kk===quality);}); };
+      qBtns[pair[0]]=b; qWrap.appendChild(b);
+    });
+    sheet.appendChild(qWrap);
+
     var row=el('div','sync-row'); row.style.marginTop='14px';
     var cancel=document.createElement('button'); cancel.className='bg-action'; cancel.textContent='취소'; cancel.style.flex='1';
     var apply=document.createElement('button'); apply.className='sheet-close'; apply.style.marginTop='0'; apply.style.flex='1'; apply.textContent='적용';
     cancel.onclick=function(){ close(); };
     apply.onclick=function(){
       var sx=st.x/scale, sy=st.y/scale, cw=st.w/scale, ch=st.h/scale;
-      var longest=Math.max(cw,ch), f=longest>1000?1000/longest:1;
+      var QMAP={low:[560,0.42],mid:[1000,0.72],high:[1600,0.85]};
+      var qm=QMAP[quality]||QMAP.mid, maxPx=qm[0], jq=qm[1];
+      var longest=Math.max(cw,ch), f=longest>maxPx?maxPx/longest:1;
       var ow=Math.max(1,Math.round(cw*f)), oh=Math.max(1,Math.round(ch*f));
       var cv=document.createElement('canvas'); cv.width=ow; cv.height=oh;
       cv.getContext('2d').drawImage(img,sx,sy,cw,ch,0,0,ow,oh);
-      var url=cv.toDataURL('image/jpeg',0.75); close(); done(url);
+      var url=cv.toDataURL('image/jpeg',jq); close(); done(url);
     };
     row.appendChild(cancel); row.appendChild(apply); sheet.appendChild(row);
     function close(){ if(mask.parentNode) document.body.removeChild(mask); }
