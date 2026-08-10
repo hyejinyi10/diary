@@ -196,6 +196,16 @@
   .slot-hint{font-size:11px; color:var(--muted); margin-left:4px;}
   .day{position:relative;}
   .cnt-badge{position:absolute; top:3px; right:3px; min-width:15px; height:15px; padding:0 3px; border-radius:8px; background:var(--ink); color:#fff; font-size:10px; font-weight:700; line-height:15px; text-align:center;}
+  .meta-box{border:1.5px solid var(--line); border-radius:14px; padding:10px 12px; margin:6px 0 4px; background:#fff; display:flex; flex-direction:column; gap:10px;}
+  .meta-row{display:flex; align-items:center; gap:6px;}
+  .meta-lb{font-size:12px; font-weight:600; color:var(--muted); min-width:52px; flex-shrink:0;}
+  .meta-picks{display:flex; flex-wrap:wrap; gap:5px;}
+  .meta-chip{width:32px; height:32px; border-radius:10px; border:1.5px solid var(--line); background:#fff; display:flex; align-items:center; justify-content:center; font-size:18px; cursor:pointer; transition:transform .1s, border-color .15s; padding:0;}
+  .meta-chip:active{transform:scale(.88);}
+  .meta-chip.on{border-color:var(--ink); background:rgba(51,50,46,.08);}
+  .meta-input{flex:1; border:none; border-bottom:1.5px solid var(--line); font-family:var(--font); font-size:13px; padding:5px 0; outline:none; background:transparent; color:var(--ink);}
+  .meta-input::placeholder{color:var(--muted); font-weight:400;}
+  .meta-input:focus{border-color:var(--ink);}
   .bg-row{display:flex; gap:10px; margin-top:10px;}
   .opacity-row{margin-top:12px;}
   .opacity-row label{font-size:13px; color:var(--muted); display:flex; align-items:center; gap:10px;}
@@ -264,40 +274,68 @@
 (function(){
   "use strict";
 
-  // ---------- storage ----------
+  // ---------- IndexedDB storage ----------
   var KEY='hjdiary_v1', BGKEY='hjdiary_bg_v1';
-  function load(){ try{return JSON.parse(localStorage.getItem(KEY))||{};}catch(e){return {};} }
-  function save(data){ try{localStorage.setItem(KEY,JSON.stringify(data));}
-    catch(e){alert('저장 공간이 부족해요. 사진 용량을 줄이거나 오래된 일기를 지워주세요.');} }
-  var store=load();
+  var DB_NAME='hjdiary',DB_VER=1,DB_STORE='entries',_db=null;
+  function openDB(){ return new Promise(function(res,rej){
+    if(_db)return res(_db); var req=indexedDB.open(DB_NAME,DB_VER);
+    req.onupgradeneeded=function(e){e.target.result.createObjectStore(DB_STORE);};
+    req.onsuccess=function(e){_db=e.target.result;res(_db);}; req.onerror=function(){rej(req.error);}; }); }
+  function idbPut(k,v){ return openDB().then(function(db){ return new Promise(function(res,rej){
+    var tx=db.transaction(DB_STORE,'readwrite'),r=tx.objectStore(DB_STORE).put(v,k);
+    r.onsuccess=function(){res();}; r.onerror=function(){rej(r.error);}; }); }); }
+  function idbGetAll(){ return openDB().then(function(db){ return new Promise(function(res,rej){
+    var tx=db.transaction(DB_STORE,'readonly'),r=tx.objectStore(DB_STORE).get('all');
+    r.onsuccess=function(){res(r.result||{});}; r.onerror=function(){rej(r.error);}; }); }); }
+  var store={};
+  function save(data){ idbPut('all',data).catch(function(e){console.error('IDB:',e);}); }
+  function migrateFromLS(){ try{ var old=JSON.parse(localStorage.getItem(KEY));
+    if(old&&Object.keys(old).length){ store=mergeStores(store,old); save(store); localStorage.removeItem(KEY); console.log('LS→IDB migrated'); } }catch(e){} }
 
-  // ---------- cloud sync (JSONBin) ----------
-  function loadSync(){ try{return JSON.parse(localStorage.getItem('hjdiary_sync'))||null;}catch(e){return null;} }
-  function saveSyncCfg(c){ try{localStorage.setItem('hjdiary_sync',JSON.stringify(c));}catch(e){} }
+  // ---------- cloud sync (GitHub) ----------
+  function loadSync(){ try{return JSON.parse(localStorage.getItem('hjdiary_gh'))||null;}catch(e){return null;} }
+  function saveSyncCfg(c){ try{localStorage.setItem('hjdiary_gh',JSON.stringify(c));}catch(e){} }
   var syncCfg=loadSync(), pushTimer=null;
   function setSyncStatus(t){ var e=document.getElementById('syncStatus'); if(e)e.textContent=t; }
-  function authHdr(base, keyOverride, typeOverride){
-    base=base||{};
-    var k=keyOverride||(syncCfg&&syncCfg.key), ty=typeOverride||(syncCfg&&syncCfg.keyType)||'master';
-    if(ty==='access') base['X-Access-Key']=k; else base['X-Master-Key']=k;
-    return base;
-  }
-  function mergeStores(a,b){ var out={},keys={}; a=a||{}; b=b||{};
-    Object.keys(a).forEach(function(k){keys[k]=1;}); Object.keys(b).forEach(function(k){keys[k]=1;});
-    Object.keys(keys).forEach(function(k){ var x=a[k],y=b[k];
-      if(!x){out[k]=y;} else if(!y){out[k]=x;} else {out[k]=((x.t||0)>=(y.t||0))?x:y;} });
-    return out; }
-  function pushSync(){ if(!syncCfg||!syncCfg.key||!syncCfg.bin)return; clearTimeout(pushTimer); pushTimer=setTimeout(function(){doPush();},1500); }
-  function doPush(cb){ if(!syncCfg||!syncCfg.key||!syncCfg.bin){ if(cb)cb(false); return; }
-    fetch('https://api.jsonbin.io/v3/b/'+syncCfg.bin,{method:'PUT',
-      headers:authHdr({'Content-Type':'application/json'}),body:JSON.stringify(store)})
-     .then(function(r){ setSyncStatus(r.ok?'동기화됨':'업로드 실패(키·권한 확인)'); if(cb)cb(r.ok); })
-     .catch(function(){ setSyncStatus('오프라인'); if(cb)cb(false); }); }
-  function pullSync(cb){ if(!syncCfg||!syncCfg.key||!syncCfg.bin){ if(cb)cb(); return; }
-    fetch('https://api.jsonbin.io/v3/b/'+syncCfg.bin+'/latest',{headers:authHdr({})})
-     .then(function(r){ return r.json(); }).then(function(j){ var remote=(j&&j.record)||{};
-       store=mergeStores(store,remote); save(store); setSyncStatus('동기화됨'); if(cb)cb(); })
-     .catch(function(){ setSyncStatus('받기 실패(키·권한 확인)'); if(cb)cb(); }); }
+  function ghHd(){ return {'Authorization':'token '+syncCfg.pat,'Accept':'application/vnd.github.v3+json'}; }
+  function ghBase(){ return 'https://api.github.com/repos/'+syncCfg.repo+'/contents/data/'; }
+  function mergeStores(a,b){ var out={},ks={}; a=a||{}; b=b||{};
+    Object.keys(a).forEach(function(k){ks[k]=1;}); Object.keys(b).forEach(function(k){ks[k]=1;});
+    Object.keys(ks).forEach(function(k){ var x=a[k],y=b[k];
+      if(!x){out[k]=y;}else if(!y){out[k]=x;}else{out[k]=((x.t||0)>=(y.t||0))?x:y;} }); return out; }
+  function groupByMonth(d){ var g={}; Object.keys(d).forEach(function(k){
+    var b=k.indexOf('#')>=0?k.slice(0,k.indexOf('#')):k; var ym=b.slice(0,7);
+    if(!g[ym])g[ym]={}; g[ym][k]=d[k]; }); return g; }
+  var _pq={};
+  function pushSync(){ if(!syncCfg||!syncCfg.pat||!syncCfg.repo)return;
+    var g=groupByMonth(store); Object.keys(g).forEach(function(m){_pq[m]=1;});
+    clearTimeout(pushTimer); pushTimer=setTimeout(function(){doPush();},2000); }
+  function doPush(cb){ if(!syncCfg||!syncCfg.pat||!syncCfg.repo){if(cb)cb(false);return;}
+    var ms=Object.keys(_pq); _pq={}; if(!ms.length){if(cb)cb(true);return;}
+    var grp=groupByMonth(store),done=0,ok=true;
+    ms.forEach(function(ym){
+      var ct=btoa(unescape(encodeURIComponent(JSON.stringify(grp[ym]||{}))));
+      var url=ghBase()+ym+'.json';
+      fetch(url,{headers:ghHd()}).then(function(r){return r.ok?r.json():null;}).then(function(ex){
+        var bd={message:'diary '+ym,content:ct,branch:syncCfg.branch||'main'};
+        if(ex&&ex.sha)bd.sha=ex.sha;
+        return fetch(url,{method:'PUT',headers:Object.assign({'Content-Type':'application/json'},ghHd()),body:JSON.stringify(bd)});
+      }).then(function(r){if(!r.ok)ok=false; done++; if(done===ms.length){setSyncStatus(ok?'동기화됨':'일부 실패');if(cb)cb(ok);}
+      }).catch(function(){ok=false;done++;if(done===ms.length){setSyncStatus('오프라인');if(cb)cb(false);}});
+    }); }
+  function pullSync(cb){ if(!syncCfg||!syncCfg.pat||!syncCfg.repo){if(cb)cb();return;}
+    setSyncStatus('동기화 중...');
+    fetch(ghBase().slice(0,-1),{headers:ghHd()}).then(function(r){
+      if(!r.ok){if(r.status===404){setSyncStatus('연결됨 (데이터 없음)');if(cb)cb();return Promise.reject('e');}throw new Error('f');}
+      return r.json();}).then(function(fs){
+      if(!Array.isArray(fs)){if(cb)cb();return;}
+      var js=fs.filter(function(f){return f.name.endsWith('.json');}); if(!js.length){setSyncStatus('동기화됨');if(cb)cb();return;}
+      var dn=0; js.forEach(function(f){
+        fetch(f.download_url).then(function(r){return r.json();}).then(function(remote){
+          store=mergeStores(store,remote); dn++;
+          if(dn===js.length){save(store);setSyncStatus('동기화됨');if(cb)cb();}
+        }).catch(function(){dn++;if(dn===js.length){save(store);setSyncStatus('일부 실패');if(cb)cb();}});
+      });}).catch(function(e){if(e==='e')return;setSyncStatus('받기 실패');if(cb)cb();}); }
 
   // ---------- background ----------
   var PRESETS={
@@ -600,6 +638,32 @@
     pentools.appendChild(eraserBtn);
     wrap.appendChild(pentools);
 
+    // --- meta fields ---
+    var WEATHERS=['☀️','⛅','🌧️','❄️','🌬️','🌙'];
+    var MOODS=['😊','😆','😍','😌','😢','😤','😴','🤯','🤔','🤩'];
+    var metaWeather=entry.weather||'', metaMood=entry.mood||'', metaPeople=entry.people||'';
+    var metaBox=el('div','meta-box');
+    function metaRow(label, items, getter, setter){
+      var row=el('div','meta-row');
+      var lb=el('div','meta-lb'); lb.textContent=label; row.appendChild(lb);
+      var picks=el('div','meta-picks');
+      items.forEach(function(em){
+        var b=document.createElement('button'); b.className='meta-chip'+(getter()===em?' on':''); b.textContent=em;
+        b.onclick=function(){ setter(getter()===em?'':em); picks.querySelectorAll('.meta-chip').forEach(function(c){c.classList.toggle('on',c.textContent===getter());}); ED.dirty=true; };
+        picks.appendChild(b);
+      });
+      row.appendChild(picks); return row;
+    }
+    metaBox.appendChild(metaRow('날씨', WEATHERS, function(){return metaWeather;}, function(v){metaWeather=v;}));
+    metaBox.appendChild(metaRow('기분', MOODS, function(){return metaMood;}, function(v){metaMood=v;}));
+    var pRow=el('div','meta-row');
+    var pLb=el('div','meta-lb'); pLb.textContent='만난 사람'; pRow.appendChild(pLb);
+    var pIn=document.createElement('input'); pIn.type='text'; pIn.className='meta-input'; pIn.placeholder='이름 (쉼표로 구분)';
+    pIn.value=metaPeople; pIn.oninput=function(){ metaPeople=pIn.value; ED.dirty=true; };
+    pRow.appendChild(pIn); metaBox.appendChild(pRow);
+    wrap.appendChild(metaBox);
+    ED.getMeta=function(){return {weather:metaWeather, mood:metaMood, people:metaPeople.trim()};};
+
     // --- text ---
     var ta=document.createElement('textarea'); ta.className='diary-text'; ta.placeholder='오늘 어떤 하루였어?'; ta.value=entry.text||'';
     ta.oninput=function(){ ED.dirty=true; };
@@ -881,17 +945,21 @@
   function saveDay(k,text,hint){
     if(ED.mode==='draw') commitDrawing();
     var objs=serialize();
-    if(objs.length===0 && !text.trim()){ store[k]={deleted:true,t:Date.now()}; save(store); pushSync(); showHint(hint,'저장할 내용이 없어요'); return; }
-    store[k]={objects:objs, text:text, img:flatten(), t:Date.now()};
+    var metaC=ED.getMeta?ED.getMeta():{}; var hasMeta=!!(metaC.weather||metaC.mood||metaC.people);
+    if(objs.length===0 && !text.trim() && !hasMeta){ store[k]={deleted:true,t:Date.now()}; save(store); pushSync(); showHint(hint,'저장할 내용이 없어요'); return; }
+    var meta=ED.getMeta?ED.getMeta():{};
+    store[k]={objects:objs, text:text, img:flatten(), weather:meta.weather||'', mood:meta.mood||'', people:meta.people||'', t:Date.now()};
     save(store); ED.dirty=false; showHint(hint,'저장했어요 ✓'); pushSync();
   }
   function autoSaveDay(k){
     if(!ED.canvas) return;
     if(ED.mode==='draw') commitDrawing();
     var text=ED.getText?ED.getText():''; var objs=serialize();
-    if(objs.length===0 && !text.trim()){ if(store[k]&&!store[k].deleted){store[k]={deleted:true,t:Date.now()}; save(store); pushSync();} return; }
+    var metaD=ED.getMeta?ED.getMeta():{}; var hasMetaD=!!(metaD.weather||metaD.mood||metaD.people);
+    if(objs.length===0 && !text.trim() && !hasMetaD){ if(store[k]&&!store[k].deleted){store[k]={deleted:true,t:Date.now()}; save(store); pushSync();} return; }
     if(!ED.dirty && store[k]) return;
-    store[k]={objects:objs, text:text, img:flatten(), t:Date.now()}; save(store); pushSync();
+    var metaA=ED.getMeta?ED.getMeta():{};
+    store[k]={objects:objs, text:text, img:flatten(), weather:metaA.weather||'', mood:metaA.mood||'', people:metaA.people||'', t:Date.now()}; save(store); pushSync();
   }
   function showHint(hint,msg){ hint.textContent=msg; hint.style.opacity='1'; setTimeout(function(){hint.style.opacity='0';},1600); }
 
@@ -1018,60 +1086,41 @@
     rb.onclick=function(){ bg={type:'preset',value:'default'}; saveBg(bg); applyBg(); close(); };
     reset.appendChild(rb); sheet.appendChild(reset);
 
-    var lb3=el('div','group-lb'); lb3.textContent='클라우드 동기화 (JSONBin)'; sheet.appendChild(lb3);
-    var selType=(syncCfg&&syncCfg.keyType)||'access';
-    var typeRow=el('div','sync-row'); typeRow.style.marginBottom='8px';
-    var accBtn=el('div','bg-action'); accBtn.textContent='Access Key (권장)'; accBtn.style.flex='1';
-    var masBtn=el('div','bg-action'); masBtn.textContent='Master Key'; masBtn.style.flex='1';
-    var keyIn=document.createElement('input'); keyIn.className='sync-in'; keyIn.type='password';
-    keyIn.value=syncCfg?syncCfg.key:'';
-    function paintType(){
-      accBtn.style.background=selType==='access'?'var(--ink)':'#FAF8F4'; accBtn.style.color=selType==='access'?'#fff':'var(--ink)';
-      masBtn.style.background=selType==='master'?'var(--ink)':'#FAF8F4'; masBtn.style.color=selType==='master'?'#fff':'var(--ink)';
-      keyIn.placeholder=selType==='access'?'X-Access-Key 값 붙여넣기':'X-Master-Key 값 붙여넣기';
-    }
-    accBtn.onclick=function(){ selType='access'; paintType(); };
-    masBtn.onclick=function(){ selType='master'; paintType(); };
-    typeRow.appendChild(accBtn); typeRow.appendChild(masBtn); sheet.appendChild(typeRow);
-    var binIn=document.createElement('input'); binIn.className='sync-in'; binIn.placeholder='Bin ID'; binIn.value=syncCfg?syncCfg.bin:'';
-    sheet.appendChild(keyIn); sheet.appendChild(binIn); paintType();
+    var lb3=el('div','group-lb'); lb3.textContent='클라우드 동기화 (GitHub)'; sheet.appendChild(lb3);
+    var patIn=document.createElement('input'); patIn.className='sync-in'; patIn.type='password';
+    patIn.placeholder='GitHub Personal Access Token'; patIn.value=syncCfg?syncCfg.pat||'':'';
+    var repoIn=document.createElement('input'); repoIn.className='sync-in';
+    repoIn.placeholder='저장소 (예: hyejinyi10/diary)'; repoIn.value=syncCfg?syncCfg.repo||'':'';
+    sheet.appendChild(patIn); sheet.appendChild(repoIn);
     var srow=el('div','sync-row');
     var connBtn=el('div','bg-action'); connBtn.textContent='연결·동기화'; connBtn.style.flex='1';
-    var newBtn=el('div','bg-action'); newBtn.textContent='새 Bin 만들기'; newBtn.style.flex='1';
-    srow.appendChild(connBtn); srow.appendChild(newBtn); sheet.appendChild(srow);
+    srow.appendChild(connBtn); sheet.appendChild(srow);
     var srow2=el('div','sync-row'); srow2.style.marginTop='8px';
     var upBtn=el('div','bg-action'); upBtn.textContent='↑ 올리기'; upBtn.style.flex='1';
     var downBtn=el('div','bg-action'); downBtn.textContent='↓ 받기'; downBtn.style.flex='1';
     srow2.appendChild(upBtn); srow2.appendChild(downBtn); sheet.appendChild(srow2);
-    var status=el('div','sync-status'); status.id='syncStatus'; status.textContent=syncCfg?'연결됨':'미연결'; sheet.appendChild(status);
+    var status=el('div','sync-status'); status.id='syncStatus'; status.textContent=syncCfg&&syncCfg.pat?'연결됨':'미연결'; sheet.appendChild(status);
 
-    connBtn.onclick=function(){ syncCfg={key:keyIn.value.trim(),bin:binIn.value.trim(),keyType:selType};
-      if(!syncCfg.key||!syncCfg.bin){ status.textContent='키와 Bin ID를 모두 입력해줘'; return; }
+    connBtn.onclick=function(){ syncCfg={pat:patIn.value.trim(),repo:repoIn.value.trim(),branch:'main'};
+      if(!syncCfg.pat||!syncCfg.repo){ status.textContent='토큰과 저장소를 모두 입력해줘'; return; }
       saveSyncCfg(syncCfg); status.textContent='동기화 중...';
       pullSync(function(){ doPush(function(){ status.textContent='연결됨 · 동기화 완료'; if(state.view==='year')renderYear(); }); }); };
-    newBtn.onclick=function(){ var kk=keyIn.value.trim(); if(!kk){status.textContent='먼저 키를 입력해줘'; return;}
-      status.textContent='생성 중...';
-      fetch('https://api.jsonbin.io/v3/b',{method:'POST',headers:authHdr({'Content-Type':'application/json','X-Bin-Name':'hyejin-diary'}, kk, selType),body:JSON.stringify(store)})
-       .then(function(r){return r.json();}).then(function(j){ var id=j&&j.metadata&&j.metadata.id;
-         if(id){ binIn.value=id; syncCfg={key:kk,bin:id,keyType:selType}; saveSyncCfg(syncCfg); status.textContent='새 Bin 생성됨 · ID가 채워졌어'; }
-         else status.textContent='생성 실패 (Access Key라면 Create 권한 확인)'; }).catch(function(){ status.textContent='생성 실패(네트워크)'; }); };
     upBtn.onclick=function(){ status.textContent='올리는 중...'; doPush(function(ok){ status.textContent=ok?'올리기 완료':'올리기 실패'; }); };
     downBtn.onclick=function(){ status.textContent='받는 중...'; pullSync(function(){ status.textContent='받기 완료'; if(state.view==='year')renderYear(); }); };
 
     var srow3=el('div','sync-row'); srow3.style.marginTop='8px';
     var linkBtn=el('div','bg-action'); linkBtn.textContent='📋 연결 링크 복사'; linkBtn.style.flex='1';
     linkBtn.onclick=function(){
-      if(!syncCfg||!syncCfg.key||!syncCfg.bin){ status.textContent='먼저 연결부터 해줘'; return; }
-      var base=location.origin+location.pathname;
-      var hash='#k='+encodeURIComponent(syncCfg.key)+'&b='+encodeURIComponent(syncCfg.bin)+'&t='+(syncCfg.keyType||'access');
-      var url=base+hash;
+      if(!syncCfg||!syncCfg.pat||!syncCfg.repo){ status.textContent='먼저 연결부터 해줘'; return; }
+      var url=location.origin+location.pathname+'#pat='+encodeURIComponent(syncCfg.pat)+'&repo='+encodeURIComponent(syncCfg.repo);
       if(navigator.clipboard&&navigator.clipboard.writeText){
-        navigator.clipboard.writeText(url).then(function(){ status.textContent='링크 복사됨! 다른 기기에서 열면 자동 연결돼'; });
-      }else{
-        prompt('이 링크를 복사해서 다른 기기에서 열어:',url); status.textContent='링크가 위에 떴어 — 복사해';
-      }
+        navigator.clipboard.writeText(url).then(function(){ status.textContent='링크 복사됨!'; });
+      }else{ prompt('이 링크를 복사해:',url); }
     };
     srow3.appendChild(linkBtn); sheet.appendChild(srow3);
+    var helpBtn=el('div','bg-action'); helpBtn.textContent='❓ 토큰 만드는 법'; helpBtn.style.marginTop='8px';
+    helpBtn.onclick=function(){ alert('1. github.com Settings > Developer settings > Personal access tokens > Fine-grained tokens\n2. Generate new token\n3. Repository access > Only select > diary 선택\n4. Permissions > Contents: Read and Write\n5. Generate > 복사해서 여기 붙여넣기\n\n토큰은 이 기기에만 저장됩니다.'); };
+    sheet.appendChild(helpBtn);
 
     var cl=document.createElement('button'); cl.className='sheet-close'; cl.textContent='완료'; cl.onclick=close;
     sheet.appendChild(cl);
@@ -1103,19 +1152,24 @@
   })();
 
   // ---------- go ----------
-  // URL 해시로 동기화 연결: #k=KEY&b=BIN&t=access|master
+  // URL 해시로 GitHub 연결: #pat=TOKEN&repo=OWNER/REPO
   (function parseHash(){
     var h=location.hash.slice(1); if(!h) return;
     var p={}; h.split('&').forEach(function(kv){ var s=kv.split('='); if(s.length===2) p[s[0]]=decodeURIComponent(s[1]); });
-    if(p.k&&p.b){
-      syncCfg={key:p.k, bin:p.b, keyType:p.t||'access'};
+    if(p.pat&&p.repo){
+      syncCfg={pat:p.pat, repo:p.repo, branch:'main'};
       saveSyncCfg(syncCfg);
-      history.replaceState(null,'',location.pathname+location.search); // 해시 제거 (주소창에 키 안 남게)
+      history.replaceState(null,'',location.pathname+location.search);
     }
   })();
-  applyBg();
-  renderYear();
-  if(syncCfg&&syncCfg.key&&syncCfg.bin){ pullSync(function(){ if(state.view==='year') renderYear(); }); }
+  idbGetAll().then(function(data){
+    store=data||{}; migrateFromLS(); applyBg(); renderYear();
+    if(syncCfg&&syncCfg.pat&&syncCfg.repo){ pullSync(function(){ if(state.view==='year') renderYear(); }); }
+  }).catch(function(e){
+    console.error('IDB fail',e);
+    try{store=JSON.parse(localStorage.getItem(KEY))||{};}catch(e2){store={};}
+    applyBg(); renderYear();
+  })
 })();
 </script>
 </body>
